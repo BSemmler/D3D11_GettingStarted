@@ -36,7 +36,23 @@
 *.la
 *.a
 
+# Compiled Shaders
+*.cso
+
+# Visual C++ cache files
+ipch/
+*.aps
+*.ncb
+*.opendb
+*.opensdf
+*.sdf
+*.cachefile
+*.VC.db
+*.VC.*
+*.VC.VC.opendb
+
 # Visual Studio Files
+vs
 Debug
 Release
 *.suo
@@ -44,3 +60,4 @@ Release
 *.vbproj.user
 ipch
 *sdf
+*.user
