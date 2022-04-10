@@ -8,6 +8,7 @@
 
 #include <fstream>
 #include <memory>
+#include <string>
 
 using namespace DirectX;
 using Microsoft::WRL::ComPtr;
@@ -58,9 +59,9 @@ struct Vertex
 Vertex triangle[] =
 {
     // pos(x, y z, 1)   color(r,g,b,a) 
-    { XMFLOAT4( 1.0f, -1.0f, 0.0f, 1.0f ),  XMFLOAT4( 1.0f, 0.0f, 0.0f, 1.0f ) },
-    { XMFLOAT4( -1.0f, -1.0f, 0.0f, 1.0f ), XMFLOAT4( 0.0f, 1.0f, 0.0f, 1.0f ) },
-    { XMFLOAT4( 0.0f, 1.0f, 0.0f, 1.0f ),   XMFLOAT4( 0.0f, 0.0f, 1.0f, 1.0f ) },
+    { XMFLOAT4( 1.0f, -1.0f, 0.0f, 1.0f ),  XMFLOAT4( 1.0f, 0.0f, 0.0f, 1.0f ) }, // Bottom right.
+    { XMFLOAT4( -1.0f, -1.0f, 0.0f, 1.0f ), XMFLOAT4( 0.0f, 1.0f, 0.0f, 1.0f ) }, // Bottom left.
+    { XMFLOAT4( 0.0f, 1.0f, 0.0f, 1.0f ),   XMFLOAT4( 0.0f, 0.0f, 1.0f, 1.0f ) }, // Top.
 };
 
 bool InitWindow( HINSTANCE instanceHandle, int show );
@@ -192,23 +193,34 @@ void Run()
     }
 }
 
+/*
+* This function will utilize DXGI methods to enumerate and evaluate the graphics adapters
+* that are present on a system.
+*/
 void GetOptimalAdapter(ComPtr<IDXGIFactory2> pFactory2)
 {
-    // Enumerate the adapters.
+    // Query pFactory2 to get a Factory6 interface that has the functionality that we seek.
     ComPtr<IDXGIFactory6> pFactory6;
-    if (SUCCEEDED( pFactory2.As( &pFactory6 ) ))
+    if (SUCCEEDED( pFactory2.As( &pFactory6 ) )) 
     {
-        for (auto adapterIndex = 0;
+        /*
+        * Here we will use the DXGI 1.6 to get the adapter that fits our performance flag.
+        * The highest performing adapter should be at index 0. We still need to double check
+        * that the adapter is not software one though as they're extremely unsuitable for
+        * real time rendering. Every system since Windows 8 has the "Microsoft Basic Render
+        * Driver" by default so we can't skip this check.
+        */
+        for ( auto adapterIndex = 0;
             DXGI_ERROR_NOT_FOUND != pFactory6->EnumAdapterByGpuPreference(
             adapterIndex,
             DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE,
-            IID_PPV_ARGS( gpAdapter.ReleaseAndGetAddressOf() ) );
-            adapterIndex++)
+            IID_PPV_ARGS( &gpAdapter ) ); // IID_PPV_ARGS gets the UUID of the adapter.
+            adapterIndex++ )
         {
             DXGI_ADAPTER_DESC1 desc;
             gpAdapter->GetDesc1( &desc );
 
-            // Ignore the software adapter
+            // Ignore the software adapter.
             if (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE)
             {
                 continue;
@@ -218,11 +230,15 @@ void GetOptimalAdapter(ComPtr<IDXGIFactory2> pFactory2)
     }
     else
     {
-        for (auto adapterIndex = 0;
-            DXGI_ERROR_NOT_FOUND != pFactory2->EnumAdapters1(
-            adapterIndex,
-            gpAdapter.ReleaseAndGetAddressOf() );
-            adapterIndex++)
+        /*
+        * If for some reason we don't have DXGI 1.6 available we will use the more "legacy" method
+        * of enumerating adapters. This method however doesn't provide us with a method for sorting
+        * adapters. As such we would have to manually check the card description to determien if its
+        * high performance.
+        */
+        for ( auto adapterIndex = 0;
+            DXGI_ERROR_NOT_FOUND != pFactory2->EnumAdapters1( adapterIndex, &gpAdapter );
+            adapterIndex++ )
         {
             DXGI_ADAPTER_DESC1 desc;
             gpAdapter->GetDesc1( &desc );
@@ -235,22 +251,28 @@ void GetOptimalAdapter(ComPtr<IDXGIFactory2> pFactory2)
             break;
         }
     }
+
+    DXGI_ADAPTER_DESC1 desc;
+    gpAdapter->GetDesc1( &desc );
+    const std::wstring description( desc.Description );
+    const std::wstring output( L"GPU: " + description + L" Video Memory: " + std::to_wstring( desc.DedicatedVideoMemory / 1024 / 1024 ) + L"MB\n" );
+    OutputDebugString( output.c_str() );
 }
 
 bool CreateSwapchainAndViewport( ComPtr<IDXGIFactory2> pFactory2 )
 {
     DXGI_SWAP_CHAIN_DESC1 swapchainDesc;
     memset( &swapchainDesc, 0, sizeof( DXGI_SWAP_CHAIN_DESC1 ) );
-    swapchainDesc.Width = gWidth;
-    swapchainDesc.Height = gHeight;
-    swapchainDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-    swapchainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-    swapchainDesc.BufferCount = 2;
-    swapchainDesc.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
-    swapchainDesc.Stereo = false;
-    swapchainDesc.AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED;
-    swapchainDesc.SampleDesc.Count = 1;
-    swapchainDesc.SampleDesc.Quality = 0;
+    swapchainDesc.Width                 = gWidth;                           // Resolution width.
+    swapchainDesc.Height                = gHeight;                          // Resolution height.
+    swapchainDesc.Format                = DXGI_FORMAT_R8G8B8A8_UNORM;       // Data format of our display buffers.
+    swapchainDesc.BufferUsage           = DXGI_USAGE_RENDER_TARGET_OUTPUT;  // How we want to utilize the buffers.
+    swapchainDesc.BufferCount           = 2;                                // How many buffers do we want.
+    swapchainDesc.SwapEffect            = DXGI_SWAP_EFFECT_DISCARD;         // How we want to treat a buffer after presentation.
+    swapchainDesc.Stereo                = false;                            // If we want to setup these buffers for stereo (3D) display
+    swapchainDesc.AlphaMode             = DXGI_ALPHA_MODE_UNSPECIFIED;      // Describes transparancy behaviour
+    swapchainDesc.SampleDesc.Count      = 1;                                // Sample count per pixel (Used for MSAA)
+    swapchainDesc.SampleDesc.Quality    = 0;                                // Quality level for MSAA
 
     HRESULT hr;
     if (FAILED( hr = pFactory2->CreateSwapChainForHwnd( gpDevice.Get(), gMainWnd, &swapchainDesc, nullptr, nullptr, &gpSwapchain ) ))
@@ -262,17 +284,18 @@ bool CreateSwapchainAndViewport( ComPtr<IDXGIFactory2> pFactory2 )
 
     D3D11_VIEWPORT viewport;
     memset( &viewport, 0, sizeof( D3D11_VIEWPORT ) );
-    viewport.TopLeftX = 0;
-    viewport.TopLeftY = 0;
-    viewport.Width = static_cast<float>(gWidth);
-    viewport.Height = ( float )gHeight;
+    viewport.TopLeftX   = 0.0f;                             // left hand bounds of the viewport.
+    viewport.TopLeftY   = 0.0f;                             // top bounds of the view port
+    viewport.Width      = static_cast< float >( gWidth );   // width of the viewport
+    viewport.Height     = static_cast< float >( gHeight );  // height of the view port
 
+    // Bind the viewport.
     gpImmediateContext->RSSetViewports( 1, &viewport );
 
     // Get the surface of the backbuffer and then create a render target view for that surface.
-
     gpSwapchain->GetBuffer( 0, __uuidof( ID3D11Texture2D ), &gpBackBuffer );
 
+    // Get the resource view for our back buffer.
     if (FAILED( hr = gpDevice->CreateRenderTargetView( gpBackBuffer.Get(), nullptr, &gpBackBufferTarget ) ))
     {
         OutputDebugStringA( "Error: Failed to create create render target! Line: " + __LINE__ );
@@ -301,6 +324,7 @@ bool CreateShadersAndLayout()
     */
     fileReader.seekg( 0, std::ios::end );
     auto length = fileReader.tellg();
+
     fileReader.seekg( 0, std::ios::beg );
 
     // Allocate a byte array buffer the size of our file.
@@ -309,7 +333,7 @@ bool CreateShadersAndLayout()
 
     fileReader.close();
 
-    HRESULT hr;
+    HRESULT hr; // Create our pixel shader.
     if (FAILED( hr = gpDevice->CreatePixelShader( buffer.get(), length, nullptr, &gpPixelShader ) ))
     {
         OutputDebugStringA( "Error: Failed to create pixel shader! Line: " + __LINE__ );
@@ -331,9 +355,11 @@ bool CreateShadersAndLayout()
     length = fileReader.tellg();
     fileReader.seekg( 0, std::ios::beg );
 
+    // Allocate a byte array buffer for the size of our file.
     buffer = std::make_unique<char[]>( length );
     fileReader.read( buffer.get(), length );
 
+    // Create our vertex shader.
     if (FAILED( hr = gpDevice->CreateVertexShader( buffer.get(), length, nullptr, &gpVertexShader ) ))
     {
         OutputDebugStringA( "Error: Failed to create vertex shader! Line: " + __LINE__ );
@@ -372,16 +398,17 @@ bool CreateBuffers()
     D3D11_BUFFER_DESC buffDesc;
     memset( &buffDesc, 0, sizeof( D3D11_BUFFER_DESC ) );
 
-    buffDesc.Usage = D3D11_USAGE_DEFAULT;
-    buffDesc.ByteWidth = sizeof( Vertex ) * 3;
-    buffDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
-    buffDesc.CPUAccessFlags = 0;
-    buffDesc.MiscFlags = 0;
+    buffDesc.Usage = D3D11_USAGE_DEFAULT;           // Describes how the buffer is to be read and written.
+    buffDesc.ByteWidth = sizeof( Vertex ) * 3;      // How big the buffer should be.
+    buffDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;  // How we intend to use this buffer.
+    buffDesc.CPUAccessFlags = 0;                    // Bitwise flags for CPU access 
+    buffDesc.MiscFlags = 0;                         // See D3D11_RESOURCE_MISC_FLAGS for more info.
 
     D3D11_SUBRESOURCE_DATA initData;
-    initData.pSysMem = triangle;
-    initData.SysMemPitch = 0;
-    initData.SysMemSlicePitch = 0;
+    memset( &initData, 0, sizeof( D3D11_SUBRESOURCE_DATA ) );
+    initData.pSysMem = triangle;                    // Data that we wish to store in the buffer
+    initData.SysMemPitch = 0;                       // Used for describing how many bytes wide a texture is. (Not used for buffers)
+    initData.SysMemSlicePitch = 0;                  // Used for 3D textures for depth. (Not used for buffers.)
 
     HRESULT hr;
     if (FAILED( hr = gpDevice->CreateBuffer( &buffDesc, &initData, &gpVertexBuffer ) ))
@@ -426,10 +453,12 @@ bool InitDirect3D()
     // Enumerate our adapters and select the highest performace adapter.
     GetOptimalAdapter( pFactory2 );
 
-    D3D_FEATURE_LEVEL featureLevels[] = { D3D_FEATURE_LEVEL_11_1,
-                                            D3D_FEATURE_LEVEL_11_0,
-                                            D3D_FEATURE_LEVEL_10_1,
-                                            D3D_FEATURE_LEVEL_10_0
+    D3D_FEATURE_LEVEL featureLevels[] = 
+    { 
+        D3D_FEATURE_LEVEL_11_1,
+        D3D_FEATURE_LEVEL_11_0,
+        D3D_FEATURE_LEVEL_10_1,
+        D3D_FEATURE_LEVEL_10_0
     };
     int numFeatureLevels = ARRAYSIZE( featureLevels );
 
@@ -495,6 +524,7 @@ bool InitDirect3D()
     gpImmediateContext->IASetInputLayout( gpVertexLayout.Get() );
     gpImmediateContext->IASetVertexBuffers( 0, 1, gpVertexBuffer.GetAddressOf(), &stride, &offset );
     gpImmediateContext->IASetPrimitiveTopology( D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST );
+    //gpImmediateContext->IASetPrimitiveTopology( D3D11_PRIMITIVE_TOPOLOGY_POINTLIST );
 
     return true;
 }
