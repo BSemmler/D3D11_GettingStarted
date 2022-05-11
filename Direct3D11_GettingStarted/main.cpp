@@ -10,27 +10,35 @@
 #include <memory>
 #include <string>
 
+#include "TargaLoader.h"
+
 using namespace DirectX;
 using Microsoft::WRL::ComPtr;
 
 HWND gMainWnd = 0;      // Handle to our window
 int gXPos     = 0;      // Window X Position
 int gYPos     = 0;      // Window Y Position
-int gWidth    = 800;    // Window width
-int gHeight   = 600;    // Window height
+int gWidth    = 1024;    // Window width
+int gHeight   = 768;    // Window height
 
-ComPtr<ID3D11Device>            gpDevice            = nullptr;
-ComPtr<ID3D11Device1>           gpDevice1           = nullptr;
-ComPtr<ID3D11DeviceContext>     gpImmediateContext  = nullptr;
-ComPtr<ID3D11DeviceContext1>    gpImmediateContext1 = nullptr;
-ComPtr<IDXGISwapChain1>         gpSwapchain         = nullptr;
-ComPtr<ID3D11Texture2D>         gpBackBuffer        = nullptr;
-ComPtr<ID3D11RenderTargetView>  gpBackBufferTarget  = nullptr;
-ComPtr<ID3D11InputLayout>       gpVertexLayout      = nullptr;
-ComPtr<ID3D11Buffer>            gpVertexBuffer      = nullptr;
-ComPtr<ID3D11VertexShader>      gpVertexShader      = nullptr;
-ComPtr<ID3D11PixelShader>       gpPixelShader       = nullptr;
-ComPtr<IDXGIAdapter1>           gpAdapter           = nullptr;
+TargaImage image;
+
+ComPtr<ID3D11Device>                gpDevice            = nullptr;
+ComPtr<ID3D11Device1>               gpDevice1           = nullptr;
+ComPtr<ID3D11DeviceContext>         gpImmediateContext  = nullptr;
+ComPtr<ID3D11DeviceContext1>        gpImmediateContext1 = nullptr;
+ComPtr<IDXGISwapChain1>             gpSwapchain         = nullptr;
+ComPtr<ID3D11Texture2D>             gpBackBuffer        = nullptr;
+ComPtr<ID3D11RenderTargetView>      gpBackBufferTarget  = nullptr;
+ComPtr<ID3D11InputLayout>           gpVertexLayout      = nullptr;
+ComPtr<ID3D11Buffer>                gpVertexBuffer      = nullptr;
+ComPtr<ID3D11Buffer>                gpIndexBuffer       = nullptr;
+ComPtr<ID3D11Texture2D>             gpTexture           = nullptr;
+ComPtr<ID3D11ShaderResourceView>    gpTexSRV            = nullptr;
+ComPtr<ID3D11SamplerState>          gpSampleSate        = nullptr;
+ComPtr<ID3D11VertexShader>          gpVertexShader      = nullptr;
+ComPtr<ID3D11PixelShader>           gpPixelShader       = nullptr;
+ComPtr<IDXGIAdapter1>               gpAdapter           = nullptr;
 
 D3D_FEATURE_LEVEL selectedFeatureLevel;
 
@@ -41,6 +49,11 @@ struct Vertex
     XMFLOAT4 color;
 };
 
+struct TextureVertex
+{
+    XMFLOAT4 position;
+    XMFLOAT2 UV;
+};
 
 /*
 *              Triangle vertex coordinates (2D)
@@ -53,15 +66,42 @@ struct Vertex
 *                     /          \
 *                    /            \
 *                   /______________\
-*     (-1.0, -1.0) x                x (1.0, -1.0)
+*     (-1.0, -1.0) x                x (1.0, -1.0) 
 * 
 */
-Vertex triangle[] =
+//Vertex triangle[] =
+//{
+//    // pos(x, y z, 1)   color(r,g,b,a) 
+//    { XMFLOAT4( 0.5f, -0.5f, 0.0f, 1.0f ),  XMFLOAT4( 1.0f, 0.0f, 0.0f, 1.0f ) }, // Bottom right.
+//    { XMFLOAT4( -0.5f, -0.5f, 0.0f, 1.0f ), XMFLOAT4( 0.0f, 1.0f, 0.0f, 1.0f ) }, // Bottom left.
+//    { XMFLOAT4( -0.5f, 0.5f, 0.0f, 1.0f ),   XMFLOAT4( 0.0f, 0.0f, 1.0f, 1.0f ) }, // Top Left.
+//    { XMFLOAT4( 0.5f, 0.5f, 0.0f, 1.0f ),   XMFLOAT4( 0.0f, 1.0f, 1.0f, 1.0f ) }, // Top Right.
+//};
+
+TextureVertex triangle[] =
 {
     // pos(x, y z, 1)   color(r,g,b,a) 
-    { XMFLOAT4( 1.0f, -1.0f, 0.0f, 1.0f ),  XMFLOAT4( 1.0f, 0.0f, 0.0f, 1.0f ) }, // Bottom right.
-    { XMFLOAT4( -1.0f, -1.0f, 0.0f, 1.0f ), XMFLOAT4( 0.0f, 1.0f, 0.0f, 1.0f ) }, // Bottom left.
-    { XMFLOAT4( 0.0f, 1.0f, 0.0f, 1.0f ),   XMFLOAT4( 0.0f, 0.0f, 1.0f, 1.0f ) }, // Top.
+    { XMFLOAT4( 0.5f, -0.5f, 0.0f, 1.0f ),  XMFLOAT2( 4.0f, 4.0f) }, // Bottom right.
+    { XMFLOAT4( -0.5f, -0.5f, 0.0f, 1.0f ), XMFLOAT2( 0.0f, 4.0f) }, // Bottom left.
+    { XMFLOAT4( -0.5f, 0.5f, 0.0f, 1.0f ),   XMFLOAT2( 0.0f, 0.0f) }, // Top Left.
+    { XMFLOAT4( 0.5f, 0.5f, 0.0f, 1.0f ),   XMFLOAT2( 4.0f, 0.0f ) }, // Top Right.
+};
+
+//TextureVertex triangle[] =
+//{
+//    // pos(x, y z, 1)   color(r,g,b,a) 
+//    { XMFLOAT4( 1.0f, -1.0f, 0.0f, 1.0f ),  XMFLOAT2( 1.0f, 1.0f ) }, // Bottom right.
+//    { XMFLOAT4( -1.0f, -1.0f, 0.0f, 1.0f ), XMFLOAT2( 0.0f, 1.0f ) }, // Bottom left.
+//    { XMFLOAT4( -1.0f, 1.0f, 0.0f, 1.0f ),   XMFLOAT2( 0.0f, 0.0f ) }, // Top Left.
+//    { XMFLOAT4( 1.0f, 1.0f, 0.0f, 1.0f ),   XMFLOAT2( 1.0f, 0.0f ) }, // Top Right.
+//};
+
+
+
+unsigned short indices[] =
+{
+    2, 0, 1,
+    0, 2, 3
 };
 
 bool InitWindow( HINSTANCE instanceHandle, int show );
@@ -75,6 +115,21 @@ void Draw();
 int WINAPI WinMain( HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR pCmdLine, int nShowCmd )
 {
     OutputDebugStringA ( "Starting up!\n" );
+    LoadTargaFromFile( "brickTexture.tga", &image );
+    std::shared_ptr<char[]> temp = image.getData();
+    char* data = temp.get();
+    int width = image.getWidth();
+    int height = image.getHeight();
+    for (int i = 0; i < width; i++)
+    {
+        OutputDebugStringA(std::to_string((unsigned char)data[i]).c_str());
+        OutputDebugStringA( " " );
+        if (i == width - 1)
+        {
+            OutputDebugStringA( "\n" );
+        }
+    }
+
     // Try to initialize the application.
     if ( !InitWindow( hInstance, nShowCmd ) ||
          !InitDirect3D() )
@@ -145,6 +200,7 @@ LRESULT CALLBACK WndProc( HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam )
     {
     case WM_LBUTTONDOWN: // Left Mouse click
         MessageBox( 0, L"Hello, World", L"Hello", MB_OK );
+        break;
     case WM_KEYDOWN: // keypress (down position)
         if ( wParam == VK_ESCAPE ) // Escape Key
         {
@@ -154,7 +210,7 @@ LRESULT CALLBACK WndProc( HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam )
     case WM_DESTROY: // Window was closed by us or by the user
         DestroyWindow( hWnd );
         PostQuitMessage( 0 ); // Send the quit message
-
+        break;
     default:
         return DefWindowProc( hWnd, msg, wParam, lParam ); // Send messages back to the OS.
         break;
@@ -376,7 +432,7 @@ bool CreateShadersAndLayout()
     D3D11_INPUT_ELEMENT_DESC layout[] =
     {
         { "POSITION", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 },
-        { "COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 },
+        { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 },
     };
 
     unsigned int numElements = ARRAYSIZE( layout );
@@ -393,13 +449,13 @@ bool CreateShadersAndLayout()
     return true;
 }
 
-bool CreateBuffers()
+bool CreateResources()
 {
     D3D11_BUFFER_DESC buffDesc;
     memset( &buffDesc, 0, sizeof( D3D11_BUFFER_DESC ) );
 
     buffDesc.Usage = D3D11_USAGE_DEFAULT;           // Describes how the buffer is to be read and written.
-    buffDesc.ByteWidth = sizeof( Vertex ) * 3;      // How big the buffer should be.
+    buffDesc.ByteWidth = sizeof( TextureVertex ) * 4;      // How big the buffer should be.
     buffDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;  // How we intend to use this buffer.
     buffDesc.CPUAccessFlags = 0;                    // Bitwise flags for CPU access 
     buffDesc.MiscFlags = 0;                         // See D3D11_RESOURCE_MISC_FLAGS for more info.
@@ -415,6 +471,81 @@ bool CreateBuffers()
     {
         OutputDebugStringA( "Error: Failed to create vertex buffer! Line: " + __LINE__ );
         MessageBox( 0, L"Failed to create vertex buffer!", L"Error!", MB_OK );
+        return false;
+    }
+
+    buffDesc.ByteWidth = sizeof( unsigned short ) * 6;
+    buffDesc.BindFlags = D3D11_BIND_INDEX_BUFFER;
+    initData.pSysMem = indices;
+
+    if (FAILED( hr = gpDevice->CreateBuffer( &buffDesc, &initData, &gpIndexBuffer ) ))
+    {
+        OutputDebugStringA( "Error: Failed to create index buffer! Line: " + __LINE__ );
+        MessageBox( 0, L"Failed to create index buffer!", L"Error!", MB_OK );
+        return false;
+    }
+
+    // Create a texture resource
+    D3D11_TEXTURE2D_DESC texDesc;
+    memset( &texDesc, 0, sizeof( D3D11_TEXTURE2D_DESC ) );
+    texDesc.Width = image.getWidth();
+    texDesc.Height = image.getHeight();
+    texDesc.ArraySize = 1;
+    texDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    texDesc.SampleDesc.Count = 1;
+    texDesc.SampleDesc.Quality = 0;
+    texDesc.Usage = D3D11_USAGE_DEFAULT;
+    texDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
+    texDesc.MipLevels = 1;
+    texDesc.MiscFlags = D3D11_RESOURCE_MISC_GENERATE_MIPS;
+
+    // Create the subresource data to upload to the GPU.
+    std::shared_ptr<char[]> imageData = image.getData();
+    initData.pSysMem = imageData.get();
+    initData.SysMemPitch = sizeof(char) * 4 * image.getWidth();
+    if (FAILED( hr = gpDevice->CreateTexture2D( &texDesc, &initData, &gpTexture ) ))
+    {
+        OutputDebugStringA( "Error: Failed to create texture! Line: " + __LINE__ );
+        MessageBox( 0, L"Error: Failed to create texture!", L"Error!", MB_OK );
+        return false;
+    }
+
+    // Create our shader resource view of our texture
+    D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc;
+    memset( &srvDesc, 0, sizeof( D3D11_SHADER_RESOURCE_VIEW_DESC ) );
+    srvDesc.Format = texDesc.Format;
+    srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+    srvDesc.Texture2D.MostDetailedMip = 0;
+    srvDesc.Texture2D.MipLevels = -1;
+
+    if (FAILED( hr = gpDevice->CreateShaderResourceView( gpTexture.Get(), &srvDesc, &gpTexSRV ) ) )
+    {
+        OutputDebugStringA( "Error: Failed to create SRV! Line: " + __LINE__ );
+        MessageBox( 0, L"Error: Failed to create SRV!", L"Error!", MB_OK );
+        return false;
+    }
+
+    // Create the sampler state
+    D3D11_SAMPLER_DESC samplerDesc;
+    memset( &samplerDesc, 0, sizeof( D3D11_SAMPLER_DESC ) );
+    samplerDesc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+    samplerDesc.AddressU = D3D11_TEXTURE_ADDRESS_WRAP;
+    samplerDesc.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
+    samplerDesc.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
+    samplerDesc.MipLODBias = 0.0f;
+    samplerDesc.MaxAnisotropy = 1;
+    samplerDesc.ComparisonFunc = D3D11_COMPARISON_ALWAYS;
+    samplerDesc.BorderColor[ 0 ] = 0;
+    samplerDesc.BorderColor[ 1 ] = 0;
+    samplerDesc.BorderColor[ 2 ] = 0;
+    samplerDesc.BorderColor[ 3 ] = 0;
+    samplerDesc.MinLOD = 0;
+    samplerDesc.MaxLOD = D3D11_FLOAT32_MAX;
+
+    if (FAILED( hr = gpDevice->CreateSamplerState( &samplerDesc, &gpSampleSate ) ))
+    {
+        OutputDebugStringA( "Error: Failed to create Sample State! Line: " + __LINE__ );
+        MessageBox( 0, L"Error: Failed to create Sample State!", L"Error!", MB_OK );
         return false;
     }
 
@@ -510,20 +641,23 @@ bool InitDirect3D()
 
     if (!CreateSwapchainAndViewport( pFactory2 ) 
         || !CreateShadersAndLayout()
-        || !CreateBuffers())
+        || !CreateResources())
     {
         return false;
     }
    
     // We will now configure the rendering pipeline by setting the resources, shaders, and states for it. 
-    unsigned int stride = sizeof( Vertex );
+    unsigned int stride = sizeof( TextureVertex );
     unsigned int offset = 0;
     gpImmediateContext->OMSetRenderTargets( 1, gpBackBufferTarget.GetAddressOf(), nullptr );
     gpImmediateContext->VSSetShader( gpVertexShader.Get(), nullptr, 0 );
     gpImmediateContext->PSSetShader( gpPixelShader.Get(), nullptr, 0 );
     gpImmediateContext->IASetInputLayout( gpVertexLayout.Get() );
     gpImmediateContext->IASetVertexBuffers( 0, 1, gpVertexBuffer.GetAddressOf(), &stride, &offset );
+    gpImmediateContext->IASetIndexBuffer( gpIndexBuffer.Get(), DXGI_FORMAT_R16_UINT, 0);
     gpImmediateContext->IASetPrimitiveTopology( D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST );
+    gpImmediateContext->PSSetSamplers( 0, 1, gpSampleSate.GetAddressOf() );
+    gpImmediateContext->PSSetShaderResources( 0, 1, gpTexSRV.GetAddressOf() );
     //gpImmediateContext->IASetPrimitiveTopology( D3D11_PRIMITIVE_TOPOLOGY_POINTLIST );
 
     return true;
@@ -531,9 +665,9 @@ bool InitDirect3D()
 
 void Draw()
 {
-    FLOAT clearColor[] = { 0.0f, 0.0f, 0.0f, 1.0f };
+    FLOAT clearColor[] = { 0.0f, 0.0f, 0.2f, 1.0f };
     gpImmediateContext->ClearRenderTargetView( gpBackBufferTarget.Get(), clearColor );
-    gpImmediateContext->Draw( 3, 0 );
+    gpImmediateContext->DrawIndexed(6, 0, 0);
     gpSwapchain->Present( 0, 0 );
 }
 
